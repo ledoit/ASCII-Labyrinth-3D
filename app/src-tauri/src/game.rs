@@ -118,9 +118,9 @@ impl GameState {
         use std::io::Write;
         use std::path::PathBuf;
         
-        // Get the workspace root (go up from src-tauri to proje)
+        // Get the app directory (go up from src-tauri to app/)
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop(); // Go from src-tauri to proje root
+        path.pop(); // Go from src-tauri to app/
         path.push("maze_map.txt");
         
         let mut output = String::new();
