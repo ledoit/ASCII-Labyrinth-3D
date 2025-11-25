@@ -8,6 +8,9 @@ pub struct GameState {
     pub player_y: f64,
     pub player_angle: f64,
     pub maze: MazeData,
+    pub exit_x: f64,
+    pub exit_y: f64,
+    pub has_won: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -45,22 +48,84 @@ pub struct PlayerInput {
     pub right: bool,
     pub turn_left: bool,
     pub turn_right: bool,
+    pub mouse_delta_x: f64,
 }
 
 impl GameState {
     pub fn new() -> Self {
-        let maze = Maze::new(41, 41);
+        let maze = Maze::new(7, 7); // Very small for testing
+        // Exit is on the bottom edge of the maze (outer wall opening)
+        let exit_x = (maze.width - 2) as f64 + 0.5;
+        let exit_y = (maze.height - 1) as f64 + 0.5;
+        
+        let start = (1, 1);
+        let end = (maze.width - 2, maze.height - 1); // Exit on bottom edge
+        
+        // Save maze map to file
+        Self::save_maze_map(&maze, start, end);
+        
+        // Calculate initial angle to face towards the exit (or an open direction)
+        let dx = exit_x - 1.5;
+        let dy = exit_y - 1.5;
+        let initial_angle = dy.atan2(dx); // atan2 gives angle from player to exit
+        
         GameState {
             player_x: 1.5,
             player_y: 1.5,
-            player_angle: 0.0,
+            player_angle: initial_angle,
             maze: MazeData::from(&maze),
+            exit_x,
+            exit_y,
+            has_won: false,
+        }
+    }
+    
+    fn save_maze_map(maze: &Maze, start: (usize, usize), end: (usize, usize)) {
+        use std::fs::File;
+        use std::io::Write;
+        use std::path::PathBuf;
+        
+        // Get the workspace root (go up from src-tauri to proje)
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop(); // Go from src-tauri to proje root
+        path.push("maze_map.txt");
+        
+        let mut output = String::new();
+        
+        // Generate the map
+        for y in 0..maze.height {
+            for x in 0..maze.width {
+                if (x, y) == start {
+                    output.push('P');
+                } else if (x, y) == end {
+                    output.push('E');
+                } else if maze.is_wall(x, y) {
+                    output.push('█');
+                } else {
+                    output.push(' ');
+                }
+            }
+            output.push('\n');
+        }
+        
+        // Write to file
+        if let Ok(mut file) = File::create(&path) {
+            if let Err(e) = file.write_all(output.as_bytes()) {
+                eprintln!("Failed to write maze map: {}", e);
+            }
+        } else {
+            eprintln!("Failed to create maze map file at: {:?}", path);
         }
     }
 
     pub fn update(&mut self, input: &PlayerInput) {
+        // Don't process any input if already won
+        if self.has_won {
+            return;
+        }
+        
         let move_speed = 0.05;
-        let turn_speed = 0.05;
+        let turn_speed = 0.10; // Doubled from 0.05
         let maze: Maze = self.maze.clone().into();
 
         // Handle rotation
@@ -70,6 +135,8 @@ impl GameState {
         if input.turn_right {
             self.player_angle += turn_speed;
         }
+        // Handle mouse/trackpad turning
+        self.player_angle += input.mouse_delta_x * turn_speed * 2.0;
 
         // Normalize angle
         self.player_angle = self.player_angle % (2.0 * std::f64::consts::PI);
@@ -115,31 +182,61 @@ impl GameState {
                 self.player_y = new_y;
             }
         }
+        
+        // Check if player reached the exit - stop movement
+        let dist_to_exit = ((self.player_x - self.exit_x).powi(2) + (self.player_y - self.exit_y).powi(2)).sqrt();
+        if dist_to_exit < 0.5 && !self.has_won {
+            self.has_won = true;
+            // Stop player at exit position
+            let dx_to_exit = self.exit_x - self.player_x;
+            let dy_to_exit = self.exit_y - self.player_y;
+            self.player_x = self.exit_x - dx_to_exit * 0.1; // Stop just before exit
+            self.player_y = self.exit_y - dy_to_exit * 0.1;
+        }
     }
 
-    pub fn render_frame(&self, width: usize, height: usize) -> String {
+    pub fn render_frame(&mut self, width: usize, height: usize) -> String {
         let maze: Maze = self.maze.clone().into();
-        let fov = std::f64::consts::PI / 3.0; // 60 degrees
+        let fov = std::f64::consts::PI / 2.0; // 90 degrees (zoomed out)
         let max_distance = 20.0;
         
+        // Continue with normal rendering even if won - we'll overlay message at the end
+        
         // Pre-calculate raycast results for each column
-        let mut column_data: Vec<(f64, u8)> = Vec::with_capacity(width);
+        let mut column_data: Vec<(f64, u8, bool, Option<f64>)> = Vec::with_capacity(width);
         for col in 0..width {
             let ray_angle = self.player_angle - fov / 2.0 + (col as f64 / width as f64) * fov;
-            let result = cast_ray(self.player_x, self.player_y, ray_angle, &maze, max_distance);
-            column_data.push((result.distance, result.wall_type));
+            let result = cast_ray(
+                self.player_x, 
+                self.player_y, 
+                ray_angle, 
+                &maze, 
+                max_distance,
+                Some(self.exit_x),
+                Some(self.exit_y),
+            );
+            column_data.push((result.distance, result.wall_type, result.passed_exit, result.exit_threshold_dist));
         }
         
         let mut frame = String::new();
         
+        // Pre-calculate wall characters for each column to ensure consistency
+        let mut wall_chars: Vec<char> = Vec::with_capacity(width);
+        for col in 0..width {
+            let (distance, wall_type, _passed_exit, _exit_threshold_dist) = &column_data[col];
+            // Only use regular distance for wall rendering (not exit threshold)
+            wall_chars.push(get_ascii_char(*distance, *wall_type, max_distance));
+        }
+        
         // Render row by row
         for row in 0..height {
             for col in 0..width {
-                let (distance, wall_type) = column_data[col];
+                let (distance, _wall_type, passed_exit, exit_threshold_dist) = column_data[col];
                 
                 // Calculate wall height based on distance (perspective projection)
-                let wall_height = if distance > 0.01 {
-                    (height as f64 / distance).min(height as f64 * 2.0)
+                let wall_render_dist = distance;
+                let wall_height = if wall_render_dist > 0.01 {
+                    (height as f64 / wall_render_dist).min(height as f64 * 2.0)
                 } else {
                     height as f64 * 2.0
                 };
@@ -151,23 +248,53 @@ impl GameState {
                     // Ceiling
                     frame.push(' ');
                 } else if row < wall_end {
-                    // Wall
-                    let char = get_ascii_char(distance, wall_type, max_distance);
-                    frame.push(char);
-                } else {
-                    // Floor
-                    let floor_dist = calculate_floor_distance(
-                        col,
-                        row,
-                        width,
-                        height,
-                        fov,
-                        self.player_angle,
-                    );
-                    if floor_dist < max_distance {
-                        frame.push(get_floor_char(floor_dist, max_distance));
+                    // Wall - if ray passed through exit threshold, make threshold line invisible
+                    if passed_exit && exit_threshold_dist.is_some() {
+                        let threshold_dist = exit_threshold_dist.unwrap();
+                        // Make threshold line invisible
+                        if (wall_render_dist - threshold_dist).abs() < 0.2 {
+                            frame.push(' '); // Invisible exit threshold line
+                        } else {
+                            frame.push(wall_chars[col]);
+                        }
                     } else {
-                        frame.push(' ');
+                        frame.push(wall_chars[col]);
+                    }
+                } else {
+                    // Floor - stop at exit threshold if ray passed through exit
+                    if passed_exit {
+                        // Check if floor position is before exit threshold
+                        let floor_dist = calculate_floor_distance(
+                            col,
+                            row,
+                            width,
+                            height,
+                            fov,
+                            self.player_angle,
+                        );
+                        if let Some(threshold) = exit_threshold_dist {
+                            if floor_dist < threshold {
+                                frame.push(get_floor_char(floor_dist, max_distance));
+                            } else {
+                                frame.push(' ');
+                            }
+                        } else {
+                            frame.push(' ');
+                        }
+                    } else {
+                        let floor_dist = calculate_floor_distance(
+                            col,
+                            row,
+                            width,
+                            height,
+                            fov,
+                            self.player_angle,
+                        );
+                        if floor_dist < max_distance {
+                            frame.push(get_floor_char(floor_dist, max_distance));
+                        } else {
+                            frame.push(' ');
+                        }
                     }
                 }
             }
@@ -175,6 +302,33 @@ impl GameState {
             if row < height - 1 {
                 frame.push('\n');
             }
+        }
+        
+        // Overlay win message if player has won
+        if self.has_won {
+            let message = "YOU ESCAPED!";
+            let message_row = height / 2;
+            let start_col = width.saturating_sub(message.len()) / 2;
+            
+            let lines: Vec<&str> = frame.split('\n').collect();
+            let mut new_frame = String::new();
+            for (row_idx, line) in lines.iter().enumerate() {
+                if row_idx == message_row {
+                    let mut new_line = line.chars().collect::<Vec<_>>();
+                    for (i, ch) in message.chars().enumerate() {
+                        if start_col + i < new_line.len() {
+                            new_line[start_col + i] = ch;
+                        }
+                    }
+                    new_frame.push_str(&new_line.iter().collect::<String>());
+                } else {
+                    new_frame.push_str(line);
+                }
+                if row_idx < lines.len() - 1 {
+                    new_frame.push('\n');
+                }
+            }
+            return new_frame;
         }
         
         frame

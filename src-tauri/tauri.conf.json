@@ -4,7 +4,8 @@
   "identifier": "com.asciilabyrinth.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420"
   },
   "app": {
     "windows": [

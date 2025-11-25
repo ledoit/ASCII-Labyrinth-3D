@@ -23,10 +23,11 @@ fn update_game(state_json: String, input: PlayerInput) -> String {
 }
 
 #[tauri::command]
-fn render_frame(state_json: String, width: usize, height: usize) -> String {
-    let game_state: GameState = serde_json::from_str(&state_json).unwrap();
+fn render_frame(state_json: String, width: usize, height: usize) -> (String, String) {
+    let mut game_state: GameState = serde_json::from_str(&state_json).unwrap();
     let frame = game_state.render_frame(width, height);
-    frame
+    // Return both the frame and the updated state (in case freeze frame was captured)
+    (frame, serde_json::to_string(&game_state).unwrap())
 }
 
 fn main() {
