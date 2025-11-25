@@ -20,6 +20,7 @@ pub struct MazeData {
     pub width: usize,
     pub height: usize,
     pub cells: Vec<Vec<bool>>,
+    pub start: (usize, usize),
 }
 
 impl From<&Maze> for MazeData {
@@ -28,6 +29,7 @@ impl From<&Maze> for MazeData {
             width: maze.width,
             height: maze.height,
             cells: maze.cells.clone(),
+            start: maze.start,
         }
     }
 }
@@ -38,6 +40,7 @@ impl From<MazeData> for Maze {
             width: data.width,
             height: data.height,
             cells: data.cells,
+            start: data.start,
         }
     }
 }
