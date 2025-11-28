@@ -1,5 +1,38 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// Centralized color system: convert hex to RGB
+function hexToRgb(hex) {
+    // Remove # if present
+    hex = hex.replace('#', '');
+    
+    // Handle shorthand hex (e.g., #0f0 -> #00ff00)
+    if (hex.length === 3) {
+        hex = hex.split('').map(char => char + char).join('');
+    }
+    
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    return `${r}, ${g}, ${b}`;
+}
+
+// Set RGB values from hex colors
+function updateColorRgbValues() {
+    const root = document.documentElement;
+    const colors = [
+        { hex: '#0f0', name: 'level-1' },
+        { hex: '#ff00ff', name: 'level-2' },
+        { hex: '#ff0000', name: 'level-3' },
+        { hex: '#9d00ff', name: 'level-4' },
+        { hex: '#0000ff', name: 'level-5' },
+    ];
+    
+    colors.forEach(({ hex, name }) => {
+        root.style.setProperty(`--${name}-rgb`, hexToRgb(hex));
+    });
+}
+
 let gameState = null;
 let keys = {
     w: false,
@@ -13,12 +46,19 @@ let keys = {
 let mouseDeltaX = 0.0;
 
 let viewport = null;
+let levelIndicator = null;
+let controls = null;
 let viewportWidth = 120;
 let viewportHeight = 40;
 
 // Initialize game
 async function init() {
+    // Initialize color system
+    updateColorRgbValues();
+    
     viewport = document.getElementById('viewport');
+    levelIndicator = document.getElementById('level-indicator');
+    controls = document.getElementById('controls');
     if (!viewport) {
         console.error('Viewport element not found');
         return;
@@ -156,6 +196,24 @@ function displayFrame(frame) {
     // Use textContent - it automatically escapes HTML and preserves whitespace
     // CSS white-space: pre will preserve newlines and spaces
     viewport.textContent = frame;
+    
+    // Update level indicator, viewport, and controls color class
+    if (gameState) {
+        try {
+            const gameStateObj = JSON.parse(gameState);
+            const level = gameStateObj.current_level || 1;
+            if (levelIndicator) {
+                levelIndicator.textContent = `Level ${level}`;
+                levelIndicator.className = `level-${level}`;
+            }
+            viewport.className = `level-${level}`;
+            if (controls) {
+                controls.className = `level-${level}`;
+            }
+        } catch (e) {
+            // Ignore parse errors
+        }
+    }
 }
 
 // Keyboard event handlers - listen on window to catch all keys
@@ -171,9 +229,9 @@ window.addEventListener('keydown', async (e) => {
             }
             
             if (gameStateObj && gameStateObj.has_won) {
-                // Restart the game
-                gameState = await invoke('restart_game');
-                console.log('Game restarted');
+                // Advance to next level or restart
+                gameState = await invoke('next_level', { stateJson: gameState });
+                console.log('Advanced to next level or restarted');
                 e.preventDefault();
                 return;
             }

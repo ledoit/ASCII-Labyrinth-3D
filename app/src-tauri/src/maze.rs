@@ -109,8 +109,8 @@ impl Maze {
         while let Some(current) = stack.pop() {
             // Check if we've reached the exit area
             if current == exit || 
-               (current.0 == exit.0 && current.1 == exit.1 - 1) ||
-               (current.0 == exit.0 - 1 && current.1 == exit.1) {
+               (current.0 == exit.0 && exit.1 > 0 && current.1 == exit.1 - 1) ||
+               (exit.0 > 0 && current.0 == exit.0 - 1 && current.1 == exit.1) {
                 exit_reached = true;
             }
             

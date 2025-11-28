@@ -1,6 +1,8 @@
 use crate::maze::Maze;
 use crate::raycast::{cast_ray, get_ascii_char};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GameState {
@@ -11,8 +13,15 @@ pub struct GameState {
     pub exit_x: f64,
     pub exit_y: f64,
     pub has_won: bool,
-    pub start_time: f64, // Time when game started (seconds since epoch)
-    pub completion_time: Option<f64>, // Time when player won (seconds elapsed)
+    pub current_level: u8, // 1-5
+    pub level_start_time: f64, // Time when current level started (seconds since epoch)
+    pub level_completion_time: Option<f64>, // Time for current level (seconds elapsed)
+    pub total_time: f64, // Cumulative time across all levels
+    pub run_times: Vec<Option<f64>>, // Actual completion times for each level in this run (5 elements)
+    pub best_times: Vec<Option<f64>>, // Best time for each level (5 elements)
+    pub best_total_time: Option<f64>, // Best time for all 5 levels combined
+    pub new_record_level: Option<u8>, // Level where new record was set (1-5, or None)
+    pub new_record_total: bool, // True if new total record was set
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,7 +70,39 @@ pub struct PlayerInput {
 
 impl GameState {
     pub fn new() -> Self {
-        let maze = Maze::new(10, 10);
+        let (best_times, best_total_time) = Self::load_best_times();
+        Self::new_level(1, vec![None; 5], best_times, best_total_time, 0.0)
+    }
+    
+    pub fn next_level(&self) -> Self {
+        if self.current_level < 5 {
+            // Store the current level's completion time in run_times
+            let mut new_run_times = self.run_times.clone();
+            let level_idx = (self.current_level - 1) as usize;
+            if level_idx < new_run_times.len() {
+                new_run_times[level_idx] = self.level_completion_time;
+            }
+            
+            let mut new_state = Self::new_level(
+                self.current_level + 1,
+                new_run_times,
+                self.best_times.clone(),
+                self.best_total_time,
+                self.total_time,
+            );
+            // Reset record flags when moving to next level
+            new_state.new_record_level = None;
+            new_state.new_record_total = false;
+            new_state
+        } else {
+            // Restart from level 1
+            Self::new()
+        }
+    }
+    
+    pub fn new_level(level: u8, run_times: Vec<Option<f64>>, best_times: Vec<Option<f64>>, best_total_time: Option<f64>, total_time: f64) -> Self {
+        let maze_size = (7 + level as usize) as usize; // 8, 9, 10, 11, 12
+        let maze = Maze::new(maze_size, maze_size);
         // Use the random exit position from maze generation
         let exit_x = maze.exit.0 as f64 + 0.5;
         let exit_y = maze.exit.1 as f64 + 0.5;
@@ -99,7 +140,7 @@ impl GameState {
         }
         
         // Get current time in seconds
-        let start_time = std::time::SystemTime::now()
+        let level_start_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs_f64();
@@ -112,9 +153,65 @@ impl GameState {
             exit_x,
             exit_y,
             has_won: false,
-            start_time,
-            completion_time: None,
+            current_level: level,
+            level_start_time,
+            level_completion_time: None,
+            total_time,
+            run_times,
+            best_times,
+            best_total_time,
+            new_record_level: None,
+            new_record_total: false,
         }
+    }
+    
+    pub fn save_best_times(best_times: &[Option<f64>], best_total_time: Option<f64>) {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop(); // Go from src-tauri to app/
+        path.push("best_times.json");
+        
+        let data = serde_json::json!({
+            "best_times": best_times,
+            "best_total_time": best_total_time,
+        });
+        
+        if let Err(e) = fs::write(&path, serde_json::to_string_pretty(&data).unwrap()) {
+            eprintln!("Failed to save best times: {}", e);
+        }
+    }
+    
+    pub fn load_best_times() -> (Vec<Option<f64>>, Option<f64>) {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop(); // Go from src-tauri to app/
+        path.push("best_times.json");
+        
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                let best_times: Vec<Option<f64>> = data["best_times"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|v| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    v.as_f64()
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![None; 5]);
+                let best_total_time = if data["best_total_time"].is_null() {
+                    None
+                } else {
+                    data["best_total_time"].as_f64()
+                };
+                return (best_times, best_total_time);
+            }
+        }
+        
+        // Return defaults if file doesn't exist or can't be parsed
+        (vec![None; 5], None)
     }
     
     fn save_maze_map(maze: &Maze, start: (usize, usize), end: (usize, usize)) {
@@ -230,12 +327,44 @@ impl GameState {
             self.player_x = self.exit_x - dx_to_exit * 0.1; // Stop just before exit
             self.player_y = self.exit_y - dy_to_exit * 0.1;
             
-            // Record completion time
+            // Record completion time for this level
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs_f64();
-            self.completion_time = Some(current_time - self.start_time);
+            let level_time = current_time - self.level_start_time;
+            self.level_completion_time = Some(level_time);
+            
+            // Update best time for this level if it's better
+            let level_idx = (self.current_level - 1) as usize;
+            if level_idx < self.best_times.len() {
+                if self.best_times[level_idx].is_none() || 
+                   self.best_times[level_idx].unwrap() > level_time {
+                    self.best_times[level_idx] = Some(level_time);
+                    self.new_record_level = Some(self.current_level);
+                }
+            }
+            
+            // Store this level's completion time in run_times
+            let level_idx = (self.current_level - 1) as usize;
+            if level_idx < self.run_times.len() {
+                self.run_times[level_idx] = Some(level_time);
+            }
+            
+            // Update total time
+            self.total_time += level_time;
+            
+            // Update best total time if this is level 5 and we completed all levels
+            if self.current_level == 5 {
+                if self.best_total_time.is_none() || 
+                   self.best_total_time.unwrap() > self.total_time {
+                    self.best_total_time = Some(self.total_time);
+                    self.new_record_total = true;
+                }
+            }
+            
+            // Save best times after updating
+            Self::save_best_times(&self.best_times, self.best_total_time);
         }
     }
 
@@ -348,14 +477,25 @@ impl GameState {
             }
         }
         
-        // Overlay win message if player has won
+        // Overlay win message if player has won (using ASCII art)
         if self.has_won {
-            let message = "YOU ESCAPED!";
-            let message_row = height / 2;
-            let time_row = height / 2 + 2;
+            // Special layout for level 5 - two columns
+            if self.current_level == 5 {
+                return self.render_level_5_win_screen(width, height, &frame);
+            }
             
-            // Format completion time
-            let time_message = if let Some(time) = self.completion_time {
+            // ASCII art for "LEVEL COMPLETE!" - for levels 1-4
+            let ascii_art = vec![
+                "██╗     ███████╗██╗   ██╗███████╗██╗         ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗     ███████╗████████╗███████╗",
+                "██║     ██╔════╝██║   ██║██╔════╝██║        ██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║     ██╔════╝╚══██╔══╝██╔════╝",
+                "██║     █████╗  ██║   ██║█████╗  ██║        ██║     ██║   ██║██╔████╔██║██████╔╝██║     █████╗     ██║   █████╗  ",
+                "██║     ██╔══╝  ╚██╗ ██╔╝██╔══╝  ██║        ██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██║     ██╔══╝     ██║   ██╔══╝  ",
+                "███████╗███████╗ ╚████╔╝ ███████╗███████╗   ╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ███████╗███████╗   ██║   ███████╗",
+                "╚══════╝╚══════╝  ╚═══╝  ╚══════╝╚══════╝    ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝   ╚═╝   ╚══════╝",
+            ];
+            
+            // Format level completion time
+            let level_time_str = if let Some(time) = self.level_completion_time {
                 let minutes = (time as u64) / 60;
                 let seconds = (time as u64) % 60;
                 let milliseconds = ((time % 1.0) * 100.0) as u64;
@@ -364,33 +504,88 @@ impl GameState {
                 "Time: --:--".to_string()
             };
             
-            let message_start_col = width.saturating_sub(message.len()) / 2;
-            let time_start_col = width.saturating_sub(time_message.len()) / 2;
+            // Format best time for this level
+            let level_idx = (self.current_level - 1) as usize;
+            let best_level_time_str = if level_idx < self.best_times.len() && self.best_times[level_idx].is_some() {
+                let best = self.best_times[level_idx].unwrap();
+                let minutes = (best as u64) / 60;
+                let seconds = (best as u64) % 60;
+                let milliseconds = ((best % 1.0) * 100.0) as u64;
+                format!("Best: {:02}:{:02}.{:02}", minutes, seconds, milliseconds)
+            } else {
+                "Best: --:--".to_string()
+            };
+            
+            let next_level_str = "Press SPACE to continue";
+            
+            let art_height = ascii_art.len();
+            let art_start_row = (height.saturating_sub(art_height + 4)) / 2;
+            let time_row = art_start_row + art_height + 1;
+            let best_row = time_row + 1;
+            let next_row = height - 2; // Bottom, centered
+            
+            // Check for personal best message
+            let personal_best_str = if self.new_record_level == Some(self.current_level) {
+                " PERSONAL BEST!".to_string()
+            } else {
+                String::new()
+            };
+            
+            // Combine time and personal best
+            let time_with_pb = format!("{}{}", level_time_str, personal_best_str);
             
             let lines: Vec<&str> = frame.split('\n').collect();
             let mut new_frame = String::new();
+            
             for (row_idx, line) in lines.iter().enumerate() {
-                if row_idx == message_row {
-                    // Overlay "YOU ESCAPED!" message
-                    let mut new_line = line.chars().collect::<Vec<_>>();
-                    for (i, ch) in message.chars().enumerate() {
-                        if message_start_col + i < new_line.len() {
-                            new_line[message_start_col + i] = ch;
+                let mut new_line = line.chars().collect::<Vec<_>>();
+                
+                // Overlay ASCII art (centered) - always show even with personal best
+                if row_idx >= art_start_row && row_idx < art_start_row + art_height {
+                    let art_line_idx = row_idx - art_start_row;
+                    if art_line_idx < ascii_art.len() {
+                        let art_line = ascii_art[art_line_idx];
+                        let art_start_col = if art_line.len() <= width {
+                            (width - art_line.len()) / 2
+                        } else {
+                            0
+                        };
+                        for (i, ch) in art_line.chars().enumerate() {
+                            if art_start_col + i < new_line.len() {
+                                new_line[art_start_col + i] = ch;
+                            }
                         }
                     }
-                    new_frame.push_str(&new_line.iter().collect::<String>());
-                } else if row_idx == time_row {
-                    // Overlay time message
-                    let mut new_line = line.chars().collect::<Vec<_>>();
-                    for (i, ch) in time_message.chars().enumerate() {
+                }
+                // Overlay level time message with personal best
+                else if row_idx == time_row {
+                    let time_start_col = width.saturating_sub(time_with_pb.len()) / 2;
+                    for (i, ch) in time_with_pb.chars().enumerate() {
                         if time_start_col + i < new_line.len() {
                             new_line[time_start_col + i] = ch;
                         }
                     }
-                    new_frame.push_str(&new_line.iter().collect::<String>());
-                } else {
-                    new_frame.push_str(line);
                 }
+                // Overlay best level time
+                else if row_idx == best_row {
+                    let best_start_col = width.saturating_sub(best_level_time_str.len()) / 2;
+                    for (i, ch) in best_level_time_str.chars().enumerate() {
+                        if best_start_col + i < new_line.len() {
+                            new_line[best_start_col + i] = ch;
+                        }
+                    }
+                }
+                // Overlay next level message at bottom
+                else if row_idx == next_row {
+                    let next_start_col = width.saturating_sub(next_level_str.len()) / 2;
+                    for (i, ch) in next_level_str.chars().enumerate() {
+                        if next_start_col + i < new_line.len() {
+                            new_line[next_start_col + i] = ch;
+                        }
+                    }
+                }
+                
+                new_frame.push_str(&new_line.iter().collect::<String>());
                 if row_idx < lines.len() - 1 {
                     new_frame.push('\n');
                 }
@@ -398,7 +593,194 @@ impl GameState {
             return new_frame;
         }
         
+        // Overlay start message that flashes for 3 seconds
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let elapsed = current_time - self.level_start_time;
+        if elapsed < 3.0 {
+            // Flash: show for 0.5s, hide for 0.3s, repeat
+            let flash_cycle = 0.8; // 0.5s on + 0.3s off
+            let phase = (elapsed % flash_cycle) / flash_cycle;
+            if phase < 0.625 { // Show for 62.5% of cycle (0.5s / 0.8s)
+                let message = format!("LEVEL {} - FIND THE EXIT!", self.current_level);
+                let message_row = height / 2;
+                let message_start_col = width.saturating_sub(message.len()) / 2;
+                
+                let lines: Vec<&str> = frame.split('\n').collect();
+                let mut new_frame = String::new();
+                for (row_idx, line) in lines.iter().enumerate() {
+                    if row_idx == message_row {
+                        // Overlay "FIND THE EXIT!" message
+                        let mut new_line = line.chars().collect::<Vec<_>>();
+                        for (i, ch) in message.chars().enumerate() {
+                            if message_start_col + i < new_line.len() {
+                                new_line[message_start_col + i] = ch;
+                            }
+                        }
+                        new_frame.push_str(&new_line.iter().collect::<String>());
+                    } else {
+                        new_frame.push_str(line);
+                    }
+                    if row_idx < lines.len() - 1 {
+                        new_frame.push('\n');
+                    }
+                }
+                return new_frame;
+            }
+        }
+        
         frame
+    }
+    
+    fn render_level_5_win_screen(&self, width: usize, height: usize, frame: &str) -> String {
+        // ASCII art for "LEVEL COMPLETE!" - always show
+        let ascii_art = vec![
+            "██╗     ███████╗██╗   ██╗███████╗██╗         ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗     ███████╗████████╗███████╗",
+            "██║     ██╔════╝██║   ██║██╔════╝██║        ██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║     ██╔════╝╚══██╔══╝██╔════╝",
+            "██║     █████╗  ██║   ██║█████╗  ██║        ██║     ██║   ██║██╔████╔██║██████╔╝██║     █████╗     ██║   █████╗  ",
+            "██║     ██╔══╝  ╚██╗ ██╔╝██╔══╝  ██║        ██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██║     ██╔══╝     ██║   ██╔══╝  ",
+            "███████╗███████╗ ╚████╔╝ ███████╗███████╗   ╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ███████╗███████╗   ██║   ███████╗",
+            "╚══════╝╚══════╝  ╚═══╝  ╚══════╝╚══════╝    ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝   ╚═╝   ╚══════╝",
+        ];
+        
+        // Format level 5 time
+        let level_5_time_str = if let Some(time) = self.level_completion_time {
+            let minutes = (time as u64) / 60;
+            let seconds = (time as u64) % 60;
+            let milliseconds = ((time % 1.0) * 100.0) as u64;
+            format!("{:02}:{:02}.{:02}", minutes, seconds, milliseconds)
+        } else {
+            "--:--".to_string()
+        };
+        
+        // Check for personal best and append to time
+        let personal_best_suffix = if self.new_record_level == Some(5) || self.new_record_total {
+            " PERSONAL BEST!"
+        } else {
+            ""
+        };
+        let time_with_pb = format!("Time: {}{}", level_5_time_str, personal_best_suffix);
+        
+        // Format best time for level 5
+        let level_5_best_str = if self.best_times.len() > 4 && self.best_times[4].is_some() {
+            let best = self.best_times[4].unwrap();
+            let minutes = (best as u64) / 60;
+            let seconds = (best as u64) % 60;
+            let milliseconds = ((best % 1.0) * 100.0) as u64;
+            format!("{:02}:{:02}.{:02}", minutes, seconds, milliseconds)
+        } else {
+            "--:--".to_string()
+        };
+        
+        // Format times for levels 1-4 (use actual run times, not best times)
+        let format_time = |time_opt: Option<f64>| -> String {
+            if let Some(time) = time_opt {
+                let minutes = (time as u64) / 60;
+                let seconds = (time as u64) % 60;
+                let milliseconds = ((time % 1.0) * 100.0) as u64;
+                format!("{:02}:{:02}.{:02}", minutes, seconds, milliseconds)
+            } else {
+                "--:--".to_string()
+            }
+        };
+        
+        let level_1_time = if self.run_times.len() > 0 { format_time(self.run_times[0]) } else { "--:--".to_string() };
+        let level_2_time = if self.run_times.len() > 1 { format_time(self.run_times[1]) } else { "--:--".to_string() };
+        let level_3_time = if self.run_times.len() > 2 { format_time(self.run_times[2]) } else { "--:--".to_string() };
+        let level_4_time = if self.run_times.len() > 3 { format_time(self.run_times[3]) } else { "--:--".to_string() };
+        
+        // Format total time
+        let total_time_str = {
+            let minutes = (self.total_time as u64) / 60;
+            let seconds = (self.total_time as u64) % 60;
+            let milliseconds = ((self.total_time % 1.0) * 100.0) as u64;
+            format!("{:02}:{:02}.{:02}", minutes, seconds, milliseconds)
+        };
+        
+        // Format best total time with personal best indicator
+        let best_total_pb_suffix = if self.new_record_total {
+            " PERSONAL BEST!"
+        } else {
+            ""
+        };
+        let best_total_str = if let Some(best) = self.best_total_time {
+            let minutes = (best as u64) / 60;
+            let seconds = (best as u64) % 60;
+            let milliseconds = ((best % 1.0) * 100.0) as u64;
+            format!("{:02}:{:02}.{:02}{}", minutes, seconds, milliseconds, best_total_pb_suffix)
+        } else {
+            format!("--:--{}", best_total_pb_suffix)
+        };
+        
+        // All texts in single column (centered)
+        let texts = vec![
+            time_with_pb,
+            format!("Best: {}", level_5_best_str),
+            String::new(), // Empty line
+            format!("Level 1: {}", level_1_time),
+            format!("Level 2: {}", level_2_time),
+            format!("Level 3: {}", level_3_time),
+            format!("Level 4: {}", level_4_time),
+            String::new(), // Empty line between level 4 and total
+            format!("Total: {}", total_time_str),
+            format!("Best total: {}", best_total_str),
+        ];
+        
+        // Calculate starting row (center vertically, accounting for ASCII art)
+        let art_height = ascii_art.len();
+        let total_text_lines = texts.len();
+        let art_start_row = (height.saturating_sub(art_height + total_text_lines + 1)) / 2;
+        let start_row = art_start_row + art_height + 1;
+        
+        let lines: Vec<&str> = frame.split('\n').collect();
+        let mut new_frame = String::new();
+        
+        for (row_idx, line) in lines.iter().enumerate() {
+            let mut new_line = line.chars().collect::<Vec<_>>();
+            
+            // Overlay ASCII art (centered) - always show
+            if row_idx >= art_start_row && row_idx < art_start_row + art_height {
+                let art_line_idx = row_idx - art_start_row;
+                if art_line_idx < ascii_art.len() {
+                    let art_line = ascii_art[art_line_idx];
+                    let art_start_col = if art_line.len() <= width {
+                        (width - art_line.len()) / 2
+                    } else {
+                        0
+                    };
+                    for (i, ch) in art_line.chars().enumerate() {
+                        if art_start_col + i < new_line.len() {
+                            new_line[art_start_col + i] = ch;
+                        }
+                    }
+                }
+            }
+            
+            // Overlay texts (centered)
+            if row_idx >= start_row && row_idx < start_row + texts.len() {
+                let text_idx = row_idx - start_row;
+                if text_idx < texts.len() {
+                    let text = &texts[text_idx];
+                    if !text.is_empty() {
+                        let text_start_col = width.saturating_sub(text.len()) / 2;
+                        for (i, ch) in text.chars().enumerate() {
+                            if text_start_col + i < new_line.len() {
+                                new_line[text_start_col + i] = ch;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            new_frame.push_str(&new_line.iter().collect::<String>());
+            if row_idx < lines.len() - 1 {
+                new_frame.push('\n');
+            }
+        }
+        
+        new_frame
     }
 }
 
