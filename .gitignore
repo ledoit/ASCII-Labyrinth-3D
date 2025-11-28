@@ -11,6 +11,9 @@ app/dist/
 app/src-tauri/target/
 app/src-tauri/Cargo.lock
 
+# Game files
+app/maze_map.txt
+
 # OS
 .DS_Store
 Thumbs.db
