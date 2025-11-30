@@ -1,18 +1,18 @@
 :root {
     /* Level 1 - Green */
-    --level-1-color: #0f0;
+    --level-1-color: #00ff25;
     
     /* Level 2 - Pink/Magenta */
     --level-2-color: #ff00ff;
     
-    /* Level 3 - Red */
-    --level-3-color: #ff0000;
+    /* Level 3 - Orange */
+    --level-3-color: #ff5800;
     
     /* Level 4 - Purple (deep but bright for contrast) */
     --level-4-color: #9d00ff;
     
-    /* Level 5 - Blue */
-    --level-5-color: #1d00ff;
+    /* Level 5 - Cyan */
+    --level-5-color: #003bff;
 }
 
 /* RGB values are calculated from hex colors using hexToRgb() function in main.js */

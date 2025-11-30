@@ -21,11 +21,11 @@ function hexToRgb(hex) {
 function updateColorRgbValues() {
     const root = document.documentElement;
     const colors = [
-        { hex: '#0f0', name: 'level-1' },
+        { hex: '#00ff25', name: 'level-1' },
         { hex: '#ff00ff', name: 'level-2' },
-        { hex: '#ff0000', name: 'level-3' },
+        { hex: '#ff5800', name: 'level-3' },
         { hex: '#9d00ff', name: 'level-4' },
-        { hex: '#0000ff', name: 'level-5' },
+        { hex: '#003bff', name: 'level-5' },
     ];
     
     colors.forEach(({ hex, name }) => {
@@ -45,7 +45,7 @@ let keys = {
 
 let mouseDeltaX = 0.0;
 let lastFrameTime = null;
-let spacebarDebounce = false;
+let isProcessingSpacebar = false;
 
 let viewport = null;
 let levelIndicator = null;
@@ -72,11 +72,33 @@ async function init() {
     
     // Set up FPS-style mouse look using Pointer Lock API
     viewport.addEventListener('click', async () => {
+        // Ensure viewport has focus when clicked
+        viewport.focus();
         try {
             await viewport.requestPointerLock();
         } catch (err) {
             console.warn('Pointer lock failed:', err);
         }
+    });
+    
+    // Ensure viewport regains focus if it loses it (especially important on win screen)
+    viewport.addEventListener('blur', () => {
+        // Only refocus if we're on the win screen and no other element has focus
+        setTimeout(() => {
+            if (viewport && document.activeElement === document.body) {
+                // Check if game is won - if so, refocus viewport for spacebar input
+                try {
+                    if (gameState) {
+                        const gameStateObj = JSON.parse(gameState);
+                        if (gameStateObj && gameStateObj.has_won) {
+                            viewport.focus();
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parse errors
+                }
+            }
+        }, 100);
     });
     
     // Track mouse movement when pointer is locked
@@ -282,6 +304,12 @@ function displayFrame(frame) {
             if (controls) {
                 controls.className = `level-${level}`;
             }
+            
+            // Ensure viewport maintains focus, especially on win screen
+            // This helps ensure spacebar presses are registered
+            if (gameStateObj.has_won && document.activeElement !== viewport) {
+                viewport.focus();
+            }
         } catch (e) {
             // Ignore parse errors
         }
@@ -292,39 +320,49 @@ function displayFrame(frame) {
 window.addEventListener('keydown', async (e) => {
     // Check if game is won and space is pressed for restart
     if (e.key === ' ' || e.key === 'Spacebar') {
-        // Prevent double-tap by debouncing
-        if (spacebarDebounce) {
+        // Prevent multiple simultaneous processing
+        if (isProcessingSpacebar) {
             e.preventDefault();
             return;
         }
         
         try {
+            // Parse game state - use the most current state
             let gameStateObj = null;
             try {
                 gameStateObj = JSON.parse(gameState);
             } catch (err) {
-                // Ignore parse errors
+                // If parsing fails, ignore this press
+                console.warn('Failed to parse game state:', err);
+                return;
             }
             
+            // Only proceed if game is won
             if (gameStateObj && gameStateObj.has_won) {
-                // Set debounce flag
-                spacebarDebounce = true;
-                
-                // Advance to next level or restart
-                gameState = await invoke('next_level', { stateJson: gameState });
-                console.log('Advanced to next level or restarted');
-                
-                // Reset debounce after a short delay
-                setTimeout(() => {
-                    spacebarDebounce = false;
-                }, 300);
-                
+                // Set processing flag to prevent concurrent calls
+                isProcessingSpacebar = true;
                 e.preventDefault();
+                
+                try {
+                    // Advance to next level or restart
+                    gameState = await invoke('next_level', { stateJson: gameState });
+                    console.log('Advanced to next level or restarted');
+                    
+                    // Ensure viewport maintains focus after level transition
+                    if (viewport) {
+                        viewport.focus();
+                    }
+                } catch (error) {
+                    console.error('Failed to advance level:', error);
+                } finally {
+                    // Reset flag after processing completes
+                    isProcessingSpacebar = false;
+                }
                 return;
             }
         } catch (error) {
-            console.error('Failed to restart game:', error);
-            spacebarDebounce = false; // Reset on error
+            console.error('Error handling spacebar:', error);
+            isProcessingSpacebar = false; // Reset on error
         }
     }
     

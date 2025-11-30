@@ -264,8 +264,8 @@ impl GameState {
         // Clamp delta_time to prevent huge jumps (e.g., if tab was inactive)
         let delta_time = input.delta_time.min(0.1); // Cap at 100ms (10fps minimum)
         
-        let move_speed_per_second = 3.0; // Units per second
-        let turn_speed_per_second = 6.0; // Radians per second
+        let move_speed_per_second = 1.8; // Units per second (0.03 per frame at 60fps, slower than original 0.05)
+        let turn_speed_per_second = 3.6; // Radians per second (0.06 per frame at 60fps, slower than original 0.10)
         let move_speed = move_speed_per_second * delta_time;
         let turn_speed = turn_speed_per_second * delta_time;
         let maze: Maze = self.maze.clone().into();
