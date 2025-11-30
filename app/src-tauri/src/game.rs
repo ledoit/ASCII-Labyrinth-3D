@@ -171,7 +171,10 @@ impl GameState {
         path.pop(); // Go from src-tauri to app/
         path.push("best_times.json");
         
+        const CURRENT_VERSION: &str = "1.2.2";
+        
         let data = serde_json::json!({
+            "version": CURRENT_VERSION,
             "best_times": best_times,
             "best_total_time": best_total_time,
         });
@@ -186,8 +189,17 @@ impl GameState {
         path.pop(); // Go from src-tauri to app/
         path.push("best_times.json");
         
+        const CURRENT_VERSION: &str = "1.2.2";
+        
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+                // Check version - if it doesn't match, reset best times
+                let file_version = data["version"].as_str().unwrap_or("");
+                if file_version != CURRENT_VERSION {
+                    // Version mismatch - reset best times
+                    return (vec![None; 5], None);
+                }
+                
                 let best_times: Vec<Option<f64>> = data["best_times"]
                     .as_array()
                     .map(|arr| {
