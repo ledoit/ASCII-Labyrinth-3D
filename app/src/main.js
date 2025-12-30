@@ -1,65 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
+import { LEVEL_COLORS } from './constants.js';
 
-// Centralized color system: convert hex to RGB
-function hexToRgb(hex) {
-    // Remove # if present
-    hex = hex.replace('#', '');
-    
-    // Handle shorthand hex (e.g., #0f0 -> #00ff00)
-    if (hex.length === 3) {
-        hex = hex.split('').map(char => char + char).join('');
-    }
-    
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    
-    return `${r}, ${g}, ${b}`;
-}
-
-// Set RGB values from hex colors
+// Initialize colors from constants - sets CSS variables
 function updateColorRgbValues() {
     const root = document.documentElement;
-    // Convert HSL to RGB for CSS variables
-    function hslToRgb(h, s, l) {
-        s /= 100;
-        l /= 100;
-        const c = (1 - Math.abs(2 * l - 1)) * s;
-        const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-        const m = l - c / 2;
-        let r, g, b;
-        
-        if (h >= 0 && h < 60) {
-            r = c; g = x; b = 0;
-        } else if (h >= 60 && h < 120) {
-            r = x; g = c; b = 0;
-        } else if (h >= 120 && h < 180) {
-            r = 0; g = c; b = x;
-        } else if (h >= 180 && h < 240) {
-            r = 0; g = x; b = c;
-        } else if (h >= 240 && h < 300) {
-            r = x; g = 0; b = c;
-        } else {
-            r = c; g = 0; b = x;
-        }
-        
-        r = Math.round((r + m) * 255);
-        g = Math.round((g + m) * 255);
-        b = Math.round((b + m) * 255);
-        
-        return `${r}, ${g}, ${b}`;
-    }
     
-    const colors = [
-        { hsl: [120, 100, 50], name: 'level-1' }, // Green
-        { hsl: [180, 100, 50], name: 'level-2' }, // Cyan
-        { hsl: [280, 100, 60], name: 'level-3' }, // Violet
-        { hsl: [300, 100, 50], name: 'level-4' }, // Pink/Magenta
-        { hsl: [30, 100, 50], name: 'level-5' },   // Orange
-    ];
-    
-    colors.forEach(({ hsl, name }) => {
-        root.style.setProperty(`--${name}-rgb`, hslToRgb(hsl[0], hsl[1], hsl[2]));
+    // Set HSL color variables from centralized constants
+    // Store both full HSL and individual components for flexibility
+    LEVEL_COLORS.forEach(({ hsl, name }) => {
+        // Full HSL color for direct use (color, border-color, etc.)
+        root.style.setProperty(`--${name}-color`, `hsl(${hsl[0]}, ${hsl[1]}%, ${hsl[2]}%)`);
+        // Individual HSL components for use in hsla() with alpha (box-shadow, text-shadow, etc.)
+        root.style.setProperty(`--${name}-h`, hsl[0]);
+        root.style.setProperty(`--${name}-s`, `${hsl[1]}%`);
+        root.style.setProperty(`--${name}-l`, `${hsl[2]}%`);
     });
 }
 
@@ -75,7 +29,6 @@ let keys = {
 
 let mouseDeltaX = 0.0;
 let lastFrameTime = null;
-let isProcessingSpacebar = false;
 
 let viewport = null;
 let levelIndicator = null;
@@ -350,49 +303,31 @@ function displayFrame(frame) {
 window.addEventListener('keydown', async (e) => {
     // Check if game is won and space is pressed for restart
     if (e.key === ' ' || e.key === 'Spacebar') {
-        // Prevent multiple simultaneous processing
-        if (isProcessingSpacebar) {
-            e.preventDefault();
-            return;
-        }
-        
         try {
-            // Parse game state - use the most current state
+            // Parse game state
             let gameStateObj = null;
             try {
                 gameStateObj = JSON.parse(gameState);
             } catch (err) {
-                // If parsing fails, ignore this press
-                console.warn('Failed to parse game state:', err);
                 return;
             }
             
             // Only proceed if game is won
             if (gameStateObj && gameStateObj.has_won) {
-                // Set processing flag to prevent concurrent calls
-                isProcessingSpacebar = true;
                 e.preventDefault();
                 
-                try {
-                    // Advance to next level or restart
-                    gameState = await invoke('next_level', { stateJson: gameState });
-                    console.log('Advanced to next level or restarted');
-                    
-                    // Ensure viewport maintains focus after level transition
-                    if (viewport) {
-                        viewport.focus();
-                    }
-                } catch (error) {
-                    console.error('Failed to advance level:', error);
-                } finally {
-                    // Reset flag after processing completes
-                    isProcessingSpacebar = false;
+                // Advance to next level or restart
+                gameState = await invoke('next_level', { stateJson: gameState });
+                console.log('Advanced to next level or restarted');
+                
+                // Ensure viewport maintains focus after level transition
+                if (viewport) {
+                    viewport.focus();
                 }
                 return;
             }
         } catch (error) {
             console.error('Error handling spacebar:', error);
-            isProcessingSpacebar = false; // Reset on error
         }
     }
     

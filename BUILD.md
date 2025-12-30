@@ -15,8 +15,8 @@ After building, you'll find the installers in:
 - **macOS**: `app/src-tauri/target/release/bundle/macos/`
   - `.app` file and `.dmg` installer
   
-- **Windows**: `app/src-tauri/target/release/bundle/msi/` or `nsis/`
-  - `.msi` or `.exe` installer
+- **Windows**: `app/src-tauri/target/release/bundle/msi/`
+  - `.msi` installer
   
 - **Linux**: `app/src-tauri/target/release/bundle/appimage/` or `deb/`
   - `.AppImage` or `.deb` package
@@ -29,7 +29,7 @@ After building, you'll find the installers in:
 4. Title: `Matrix Maze v1.0.0`
 5. Upload the built binaries:
    - `matrix-maze_1.0.0_x64.dmg` (macOS)
-   - `matrix-maze_1.0.0_x64-setup.exe` or `.msi` (Windows)
+   - `Matrix Maze_1.0.0_x64_en-US.msi` (Windows)
    - `matrix-maze_1.0.0_amd64.AppImage` or `.deb` (Linux)
 6. Click "Publish release"
 

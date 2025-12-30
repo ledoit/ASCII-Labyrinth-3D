@@ -1,20 +1,8 @@
-:root {
-    /* Regularized HSL colors - consistent saturation (100%), varying lightness for better visibility */
-    /* Level 1 - Green */
-    --level-1-color: hsl(120, 100%, 50%);
-    
-    /* Level 2 - Cyan */
-    --level-2-color: hsl(180, 100%, 50%);
-    
-    /* Level 3 - Violet */
-    --level-3-color: hsl(280, 100%, 60%);
-    
-    /* Level 4 - Pink/Magenta */
-    --level-4-color: hsl(300, 100%, 50%);
-    
-    /* Level 5 - Orange */
-    --level-5-color: hsl(30, 100%, 50%);
-}
+/* 
+ * Colors are now defined in constants.js and set dynamically by main.js
+ * Edit colors in app/src/constants.js - LEVEL_COLORS array
+ * This ensures colors are defined in one place only
+ */
 
 /* RGB values are calculated from hex colors using hexToRgb() function in main.js */
 
@@ -53,7 +41,7 @@ body {
     overflow: visible;
     border: 2px solid #0f0;
     padding: 10px;
-    box-shadow: 0 0 20px rgba(var(--level-1-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.3);
     letter-spacing: 0;
     word-spacing: 0;
     font-variant-ligatures: none;
@@ -65,31 +53,31 @@ body {
 #viewport.level-1 {
     color: var(--level-1-color);
     border-color: var(--level-1-color);
-    box-shadow: 0 0 20px rgba(var(--level-1-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.3);
 }
 
 #viewport.level-2 {
     color: var(--level-2-color);
     border-color: var(--level-2-color);
-    box-shadow: 0 0 20px rgba(var(--level-2-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-2-h), var(--level-2-s), var(--level-2-l), 0.3);
 }
 
 #viewport.level-3 {
     color: var(--level-3-color);
     border-color: var(--level-3-color);
-    box-shadow: 0 0 20px rgba(var(--level-3-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-3-h), var(--level-3-s), var(--level-3-l), 0.3);
 }
 
 #viewport.level-4 {
     color: var(--level-4-color);
     border-color: var(--level-4-color);
-    box-shadow: 0 0 20px rgba(var(--level-4-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-4-h), var(--level-4-s), var(--level-4-l), 0.3);
 }
 
 #viewport.level-5 {
     color: var(--level-5-color);
     border-color: var(--level-5-color);
-    box-shadow: 0 0 20px rgba(var(--level-5-rgb), 0.3);
+    box-shadow: 0 0 20px hsla(var(--level-5-h), var(--level-5-s), var(--level-5-l), 0.3);
 }
 
 #controls {
@@ -97,7 +85,7 @@ body {
     text-align: center;
     color: #0f0;
     font-size: 14px;
-    text-shadow: 0 0 10px rgba(var(--level-1-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.5);
     transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
@@ -107,27 +95,27 @@ body {
 
 #controls.level-1 {
     color: var(--level-1-color);
-    text-shadow: 0 0 10px rgba(var(--level-1-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.5);
 }
 
 #controls.level-2 {
     color: var(--level-2-color);
-    text-shadow: 0 0 10px rgba(var(--level-2-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-2-h), var(--level-2-s), var(--level-2-l), 0.5);
 }
 
 #controls.level-3 {
     color: var(--level-3-color);
-    text-shadow: 0 0 10px rgba(var(--level-3-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-3-h), var(--level-3-s), var(--level-3-l), 0.5);
 }
 
 #controls.level-4 {
     color: var(--level-4-color);
-    text-shadow: 0 0 10px rgba(var(--level-4-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-4-h), var(--level-4-s), var(--level-4-l), 0.5);
 }
 
 #controls.level-5 {
     color: var(--level-5-color);
-    text-shadow: 0 0 10px rgba(var(--level-5-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-5-h), var(--level-5-s), var(--level-5-l), 0.5);
 }
 
 #level-indicator {
@@ -136,32 +124,32 @@ body {
     color: #0f0;
     font-size: 16px;
     font-weight: bold;
-    text-shadow: 0 0 10px rgba(var(--level-1-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.5);
     transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
 #level-indicator.level-1 {
     color: var(--level-1-color);
-    text-shadow: 0 0 10px rgba(var(--level-1-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-1-h), var(--level-1-s), var(--level-1-l), 0.5);
 }
 
 #level-indicator.level-2 {
     color: var(--level-2-color);
-    text-shadow: 0 0 10px rgba(var(--level-2-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-2-h), var(--level-2-s), var(--level-2-l), 0.5);
 }
 
 #level-indicator.level-3 {
     color: var(--level-3-color);
-    text-shadow: 0 0 10px rgba(var(--level-3-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-3-h), var(--level-3-s), var(--level-3-l), 0.5);
 }
 
 #level-indicator.level-4 {
     color: var(--level-4-color);
-    text-shadow: 0 0 10px rgba(var(--level-4-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-4-h), var(--level-4-s), var(--level-4-l), 0.5);
 }
 
 #level-indicator.level-5 {
     color: var(--level-5-color);
-    text-shadow: 0 0 10px rgba(var(--level-5-rgb), 0.5);
+    text-shadow: 0 0 10px hsla(var(--level-5-h), var(--level-5-s), var(--level-5-l), 0.5);
 }
 
